@@ -4,6 +4,18 @@ import streamlit as st
 from cvzone.HandTrackingModule import HandDetector
 import cvzone
 import os
+import pandas as pd
+import time
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# Set up Google Sheets API credentials
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("neurowell-5b8eaaee5d15.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1lRSSzi6IfIEEKkfpMj67QI3S4ukyKzr2_yDlVEFGQcc/edit?gid=0#gid=0").sheet1
+
+
 
 # Initialize hand detector
 detector = HandDetector(detectionCon=0.8, maxHands=2)
@@ -122,33 +134,84 @@ def update_game():
     return img
 
 def app():
-    st.title("Ping Pong Game with Hand Tracking")
+    st.title("Eye–hand coordination Test Analysis")
+    st.image('divider.png')
+
+    st.write(" - This computer vision-based game assesses the coordination between a patient’s hands, reflecting the functional status of both the left and right hemispheres of the brain.")
+    st.write(" - :orange[Purpose of test]: It provides insights into motor skills and bilateral coordination, crucial for designing targeted rehabilitation strategies.")
+    # Initialize session state
+    if 'progress' not in st.session_state:
+        st.session_state.progress = []
 
     with st.form("game_form"):
-        start_button = st.form_submit_button("Start Game")
+
+        st.image('coordination.jpg')
+        st.write('')
+        start_button = st.form_submit_button("Click here to start the test analysis")
+
+        
 
         if start_button:
             FRAME_WINDOW = st.image([])
 
-            while True:
+            start_time = time.time()
+            end_time = start_time + 40  # Run the game for 40 seconds
+
+            while time.time() < end_time:
                 img = update_game()
                 FRAME_WINDOW.image(img, channels="BGR", use_column_width=True)
 
-                # Reset the game if 'r' key is pressed
-                if cv2.waitKey(1) == ord('r'):
-                    global ballPos, speedX, speedY, gameOver, score, images
-                    ballPos = [100, 100]
-                    speedX = 22
-                    speedY = 22
-                    gameOver = False
-                    score = [0, 0]
-                    images["game_over"] = cv2.imread("Resources/game_over.jpg")
-                
+                remaining_time = int(end_time - time.time())
+                cv2.putText(img, f"Time Left: {remaining_time}s", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 5)
+
                 if gameOver:
-                    cap.release()
-                    cv2.destroyAllWindows()
                     break
 
-# Run the app
+            cap.release()
+            cv2.destroyAllWindows()
+
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+            st.session_state.progress.append({
+                'timestamp': timestamp,
+                'time': 40,
+                'score': score[1] + score[0],
+            })
+
+            if st.session_state.progress:
+                df = pd.DataFrame(st.session_state.progress)
+                st.write("Game Recognition Progress")
+                st.dataframe(df)
+
+    patient_name = st.text_input("Enter patient name:")
+
+        # Input fields for matched words and total words
+    score = st.number_input("Enter the score patient made in 40 seconds:", min_value=0)
+    
+
+        # Button to calculate and update the speech score
+    if st.button("Upload Score"):
+            # Calculate the speech score
+            speech_score = score
+
+            # Search for the patient by name and update the score
+            try:
+                cell = sheet.find(patient_name)
+                row_index = cell.row
+                sheet.update_cell(row_index, 7, speech_score)
+                st.success(f"Speech score updated successfully for {patient_name} in Google Sheets!")
+            except gspread.exceptions.CellNotFound:
+                st.error("Patient not found. Please check the name and try again.")
+
+
+
+    st.write('')
+
+            
+
 if __name__ == "__main__":
-    app()
+    try:
+        app()
+    except Exception as e:
+        cap.release()
+        cv2.destroyAllWindows()
+        st.error(f"An error occurred: {e}")

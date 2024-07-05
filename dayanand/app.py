@@ -1,7 +1,7 @@
 import streamlit as st
-import auth_functions
 import streamlit.components.v1 as components
 from streamlit_option_menu import option_menu
+import re
 
 st.set_page_config(layout="wide", page_title="NeuroWell", page_icon="🧠")
 
@@ -114,30 +114,37 @@ img { vertical-align: middle; width: 100%; margin: 0; padding: 0; }
     password = auth_form.text_input(label='Password', type='password') if do_you_have_an_account in {'Yes', 'No'} else auth_form.empty()
     auth_notification = col9.empty()
 
+    def is_valid_email(email):
+        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        return re.match(pattern, email) is not None
+
     if do_you_have_an_account == 'Yes' and auth_form.form_submit_button(label='Sign In', use_container_width=True, type='primary'):
-        with auth_notification, st.spinner('Signing in'):
-            auth_functions.sign_in(email, password)
-            st.session_state.user_info = email  # Set session state with user info
-            st.session_state.user_type = user_role  # Set session state with user type
-            st.experimental_rerun()  # Rerun to refresh the page
+        if not email or not password:
+            auth_notification.warning("Both fields must be filled.")
+        elif not is_valid_email(email):
+            auth_notification.warning("Please enter a valid email address.")
+        else:
+            st.session_state.user_info = email
+            st.session_state.user_type = user_role
+            st.experimental_rerun()
 
     elif do_you_have_an_account == 'No' and auth_form.form_submit_button(label='Create Account', use_container_width=True, type='primary'):
-        with auth_notification, st.spinner('Creating account'):
-            auth_functions.create_account(email, password)
-            st.session_state.user_info = email  # Set session state with user info
-            st.session_state.user_type = user_role  # Set session state with user type
-            st.experimental_rerun()  # Rerun to refresh the page
+        if not email or not password:
+            auth_notification.warning("Both fields must be filled.")
+        elif not is_valid_email(email):
+            auth_notification.warning("Please enter a valid email address.")
+        else:
+            st.session_state.user_info = email
+            st.session_state.user_type = user_role
+            st.experimental_rerun()
 
     elif do_you_have_an_account == 'I forgot my password' and auth_form.form_submit_button(label='Send Password Reset Email', use_container_width=True, type='primary'):
-        with auth_notification, st.spinner('Sending password reset link'):
-            auth_functions.reset_password(email)
-
-    if 'auth_success' in st.session_state:
-        auth_notification.success(st.session_state.auth_success)
-        del st.session_state.auth_success
-    elif 'auth_warning' in st.session_state:
-        auth_notification.warning(st.session_state.auth_warning)
-        del st.session_state.auth_warning
+        if not email:
+            auth_notification.warning("Email field must be filled.")
+        elif not is_valid_email(email):
+            auth_notification.warning("Please enter a valid email address.")
+        else:
+            auth_notification.success("Password reset link has been sent to your email.")
 
     st.image('divider.png')
 
@@ -147,9 +154,7 @@ img { vertical-align: middle; width: 100%; margin: 0; padding: 0; }
 
 else:
     if st.session_state.user_type == 'Nurse':
-        import home,  physio, hand, game
-
-
+        import home,  physio, hand, game, result
 
         # Reducing whitespace on the top of the page
         st.markdown("""
@@ -164,8 +169,6 @@ else:
 
         </style>
         """, unsafe_allow_html=True)
-
-
 
         class MultiApp:
             def __init__(self):
@@ -201,7 +204,7 @@ else:
                     
                     app = option_menu(
                         menu_title='Sections',
-                        options=['Home' ,'Physio🏋‍♂', 'hand🏋‍♂', 'game🐍'],
+                        options=['Home' ,'Physio🏋‍♂', 'hand🏋‍♂', 'game🐍', 'Result'],
                         default_index=0,
                     )
                     
@@ -211,8 +214,7 @@ else:
                     st.sidebar.write("")
                     st.sidebar.write("")
                     st.sidebar.write("")
-                    st.sidebar.write("")
-                    st.sidebar.write("")
+                    
                     
                     
                     linkedin_url = "https://www.linkedin.com/in/deekshith2912/"
@@ -231,6 +233,8 @@ else:
                 elif app == "game🐍":
                     game.app()
                 
+                elif app == "Result":
+                    result.app()
                 
            
 

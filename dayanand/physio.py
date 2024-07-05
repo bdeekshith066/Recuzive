@@ -4,263 +4,27 @@ import pandas as pd
 import datetime
 import random
 import matplotlib.pyplot as plt
-import cv2
-import mediapipe as mp
-from cvzone.HandTrackingModule import HandDetector
-import math
 import random
 import numpy as np
 import os
-import io
-import cvzone
 import random
 import base64
 import json
 from PIL import Image
 from streamlit_autorefresh import st_autorefresh
-import time
 import time as tm
 from gtts import gTTS
 from googletrans import Translator
 import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
+# Set up Google Sheets API credentials
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("neurowell-5b8eaaee5d15.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1lRSSzi6IfIEEKkfpMj67QI3S4ukyKzr2_yDlVEFGQcc/edit?gid=0#gid=0").sheet1
 
-detector = HandDetector(detectionCon=0.8, maxHands=2)
-
-# Initialize game assets
-cap = cv2.VideoCapture(0)
-cap.set(3, 1280)
-cap.set(4, 720)
-
-# Define image paths
-image_paths = {
-    "background": "Resources/Background.jpg",
-    "game_over": "Resources/game_over.jpg",
-    "ball": "Resources/ddd.jpg",
-    "left_bat": "Resources/left.jpg",
-    "right_bat": "Resources/hight.jpg"
-}
-
-# Load and check images
-images = {}
-for name, path in image_paths.items():
-    if os.path.exists(path):
-        image = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-        if image is None:
-            st.error(f"Failed to load image: {path}")
-            st.stop()
-        # Check if the image has an alpha channel
-        if image.shape[2] == 3:
-            # Add an alpha channel
-            alpha_channel = np.ones((image.shape[0], image.shape[1], 1), dtype=image.dtype) * 255
-            image = np.concatenate((image, alpha_channel), axis=2)
-        images[name] = image
-    else:
-        st.error(f"Image not found: {path}")
-        st.stop()
-
-# Resize imgBackground to match the webcam frame size
-imgBackground = cv2.resize(images["background"], (1280, 720))
-
-# Ensure imgBackground has 3 channels for blending
-if imgBackground.shape[2] == 4:
-    imgBackground = cv2.cvtColor(imgBackground, cv2.COLOR_BGRA2BGR)
-
-# Initialize game variables
-ballPos = [100, 100]
-speedX = 25
-speedY = 25
-gameOver = False
-score = [0, 0]
-
-def update_game():
-    global ballPos, speedX, speedY, gameOver, score, images
-
-    success, img = cap.read()
-    if not success:
-        st.error("Failed to read from webcam.")
-        st.stop()
-
-    img = cv2.flip(img, 1)
-    imgRaw = img.copy()
-    hands, img = detector.findHands(img, flipType=False)
-
-    # Ensure img and imgBackground have the same size and number of channels
-    imgBackground_resized = cv2.resize(imgBackground, (img.shape[1], img.shape[0]))
-
-    img = cv2.addWeighted(img, 0.2, imgBackground_resized, 0.8, 0)
-
-    if hands:
-        for hand in hands:
-            x, y, w, h = hand['bbox']
-            h1, w1, _ = images["left_bat"].shape
-            y1 = y - h1 // 2
-            y1 = np.clip(y1, 20, 415)
-
-            if hand['type'] == "Left":
-                img = cvzone.overlayPNG(img, images["left_bat"], (59, y1))
-                if 59 < ballPos[0] < 59 + w1 and y1 < ballPos[1] < y1 + h1:
-                    speedX = -speedX
-                    ballPos[0] += 30
-                    score[0] += 1
-
-            if hand['type'] == "Right":
-                img = cvzone.overlayPNG(img, images["right_bat"], (1195, y1))
-                if 1195 - 50 < ballPos[0] < 1195 and y1 < ballPos[1] < y1 + h1:
-                    speedX = -speedX
-                    ballPos[0] -= 30
-                    score[1] += 1
-
-    # Game Over
-    if ballPos[0] < 40 or ballPos[0] > 1200:
-        gameOver = True
-
-    if gameOver:
-        img = images["game_over"]
-        cv2.putText(img, str(score[1] + score[0]).zfill(2), (585, 360), cv2.FONT_HERSHEY_COMPLEX,
-                    2.5, (200, 0, 200), 5)
-        
-    else:
-        # Move the Ball
-        if ballPos[1] >= 500 or ballPos[1] <= 10:
-            speedY = -speedY
-
-        ballPos[0] += speedX
-        ballPos[1] += speedY
-
-        # Draw the ball
-        img = cvzone.overlayPNG(img, images["ball"], ballPos)
-
-        cv2.putText(img, str(score[0]), (300, 650), cv2.FONT_HERSHEY_COMPLEX, 3, (255, 255, 255), 5)
-        cv2.putText(img, str(score[1]), (900, 650), cv2.FONT_HERSHEY_COMPLEX, 3, (255, 255, 255), 5)
-
-    # Ensure imgRaw has 3 channels
-    if imgRaw.shape[2] == 4:
-        imgRaw = cv2.cvtColor(imgRaw, cv2.COLOR_BGRA2BGR)
-
-    #img[580:700, 20:233] = cv2.resize(imgRaw, (213, 120))
-
-    return img
-
-mp_hands = mp.solutions.hands
-mp_drawing = mp.solutions.drawing_utils
-
-# Function to count fingers
-
-
-# Snake game class
-class SnakeGameClass:
-    def __init__(self, pathFood):
-        self.points = []
-        self.lengths = []  # distance between each point
-        self.currentLength = 0
-        self.allowedLength = 150
-        self.previousHead = (0, 0)
-        self.imgFood = cv2.imread(pathFood, cv2.IMREAD_UNCHANGED)
-        if self.imgFood is None:
-            raise ValueError(f"Could not read image at {pathFood}")
-        if self.imgFood.shape[2] == 3:  # If the image does not have an alpha channel, add one
-            self.imgFood = cv2.cvtColor(self.imgFood, cv2.COLOR_BGR2BGRA)
-        self.hFood, self.wFood, _ = self.imgFood.shape
-        self.foodPoint = (0, 0)
-        self.score = 0
-        self.gameOver = False
-        self.randomFoodLocation()
-        
-    def randomFoodLocation(self):
-        self.foodPoint = random.randint(100, 1000), random.randint(100, 600)
-        
-    def update(self, imgMain, currentHead):
-        if self.gameOver:
-            st.error("Game Over")
-            st.write(f'Your Score: {self.score}')
-            return imgMain
-
-        px, py = self.previousHead
-        cx, cy = currentHead
-
-        self.points.append([cx, cy])
-        distance = math.hypot(cx - px, cy - py)
-        self.lengths.append(distance)
-        self.currentLength += distance
-        self.previousHead = cx, cy
-
-        # Length Reduction
-        if self.currentLength > self.allowedLength:
-            for i, length in enumerate(self.lengths):
-                self.currentLength -= length
-                self.lengths.pop(i)
-                self.points.pop(i)
-                if self.currentLength < self.allowedLength:
-                    break
-       
-        # Draw Snake
-        if self.points:
-            for i, point in enumerate(self.points):
-                if i != 0:
-                    cv2.line(imgMain, tuple(self.points[i - 1]), tuple(self.points[i]), (0, 0, 255), 20)
-            cv2.circle(imgMain, tuple(self.points[-1]), 20, (0, 255, 0), cv2.FILLED)
-
-        # Draw Food
-        rx, ry = self.foodPoint
-        imgMain = cvzone.overlayPNG(imgMain, self.imgFood, (rx - self.wFood // 2, ry - self.hFood // 2))
-
-        # Check if snake ate the Food
-        if rx - self.wFood // 2 < cx < rx + self.wFood // 2 and \
-                ry - self.hFood // 2 < cy < ry + self.hFood // 2:
-            self.randomFoodLocation()
-            self.allowedLength += 50
-            self.score += 1
-            st.success(f"Score: {self.score}")
-
-        return imgMain
-
-# Snake game runner function
-def run_snake_game():
-    st.title("Snake Game with Hand Tracking")
-
-    # Open webcam
-    cap = cv2.VideoCapture(0)
-    cap.set(3, 1280)
-    cap.set(4, 720)
-
-    # Initialize hand detector here
-    detector = mp_hands.Hands(min_detection_confidence=0.8, max_num_hands=1)  
-    game = SnakeGameClass("Donut.png")
-
-    FRAME_WINDOW = st.image([])
-
-    # Metrics storage
-    snake_metrics = {
-        "score": [],
-        "food_positions": [],
-        "snake_length": []
-    }
-
-    while True:
-        success, img = cap.read()
-        if not success:
-            break
-        img = cv2.flip(img, 1)
-        imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = detector.process(imgRGB)
-
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                pointIndex = [int(hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].x * 1280), 
-                              int(hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP].y * 720)]
-                img = game.update(img, pointIndex)
-
-                # Store metrics
-                snake_metrics["score"].append(game.score)
-                snake_metrics["food_positions"].append(game.foodPoint)
-                snake_metrics["snake_length"].append(game.allowedLength)
-
-        FRAME_WINDOW.image(img, channels="BGR", use_column_width=True)
-
-    cap.release()
-    cv2.destroyAllWindows()
-    return snake_metrics
 
 # Function to recognize speech using the microphone
 def recognize_speech_from_mic(recognizer, microphone):
@@ -282,7 +46,7 @@ microphone = sr.Microphone()
 # Sample paragraphs
 paragraphs = [
     "Exercising daily is good for your body and mind. Simple activities like walking or stretching can boost your mood. Exercise can also help improve your strength and balance.",
-    "The beauty of the natural world unfolded before my eyes, as sunlight filtered through the lush canopy of trees. Each leaf shimmered with a verdant hue, while the gentle rustle of branches whispered secrets of the forest. In the embrace of natures splendor, I found solace and renewal, a sanctuary from the hustle and bustle of daily life.",
+    
 ]
 
 # Initialize session state for storing progress
@@ -298,7 +62,7 @@ translator = Translator()
 
 # Define the feedback text
 feedback_text = "Ask the patient to speak. Observe him carefully while they speak and the scores will be displayed on the screen. Assess him with care regards NueroWell"
-
+feedback_textt = "Ask the patient to clearly observe the image and match him with the grid od emojis which are displayed below.Each will be displayed for 115 seconds and a correct one will have +9 score and wrong will have -1 seconds and Assess him with care regards Team NueroWell "
     # List of languages
 languages = {
         "English": "en",
@@ -366,6 +130,8 @@ def app():
     col8, col9 = st.columns([3, 1.5])
 
     with col8:
+
+        st.subheader(" 1. :orange[Speech Test Analysis] ")
         
         with st.form("speech"):
             # Display the paragraph
@@ -394,7 +160,8 @@ def app():
                     'score': score,
                     'total_words': len(original_words),
                     'matched_words': len(matched_words),
-                    'unmatched_words': len(original_words) - len(matched_words)
+                    'unmatched_words': len(original_words) - len(matched_words),
+                    
                 })
 
                 # Save progress to a CSV file (or database)
@@ -406,8 +173,29 @@ def app():
                 df = pd.DataFrame(st.session_state.progress)
                 st.write("Speech Recognition Progress")
                 st.dataframe(df)
+        # Calculate the cumulative score to be updated in Google Sheets
+        
 
-            st.write('')
+        patient_name = st.text_input("Enter patient name:")
+
+        # Input fields for matched words and total words
+        matched_words = st.number_input("Enter the number of matched words:", min_value=0)
+        total_words = st.number_input("Enter the total number of words:", min_value=1)
+
+        # Button to calculate and update the speech score
+        if st.button("Upload Score"):
+            # Calculate the speech score
+            speech_score = (matched_words / total_words) * 10
+
+            # Search for the patient by name and update the score
+            try:
+                cell = sheet.find(patient_name)
+                row_index = cell.row
+                sheet.update_cell(row_index, 4, speech_score)
+                st.success(f"Speech score updated successfully for {patient_name} in Google Sheets!")
+            except gspread.exceptions.CellNotFound:
+                st.error("Patient not found. Please check the name and try again.")
+                
 
     with col9:
         # Check if there is progress data to display graphs
@@ -462,8 +250,32 @@ def app():
     st.image('divider.png')
     st.image('divider.png')
     
+    col111, col222 = st.columns(2)
 
+    # Language selection in column 2
+    with col222:
+        selected_language = st.selectbox("Choose a language for  the instructions", list(languages.keys()))
+
+    # Translate the text
+    if selected_language != "English":
+        translated_text = translator.translate(feedback_textt, dest=languages[selected_language]).text
+    else:
+        translated_text = feedback_textt
+
+    # Convert text to speech
+    tts = gTTS(translated_text, lang=languages[selected_language])
+    audio_file = "feedbackk.mp3"
+    tts.save(audio_file)
+
+    # Display the audio in column 1
+    with col111:
+        st.write('')
+        st.audio(audio_file)
+
+    # Remove the audio file after playing
+    os.remove(audio_file)
     
+    st.subheader(" 2. :orange[PicMatch Test Analysis]")
     with st.form("game"):
         vDrive = os.path.splitdrive(os.getcwd())[0]
         if vDrive == "C:": vpth = "C:/Users/Shawn/dev/utils/pixmatch/"   # local developer's disc
@@ -712,17 +524,11 @@ def app():
             
         mystate.GameDetails[0] = 'Easy'
 
-        st.subheader(' PICMATCHING')
-        st.write(':orange[PicMatch - Match emojis scattered across the grid to the ones displayed in the image]')
+        
+        st.write('PicMatch - Match emojis scattered across the grid to the ones displayed in the image')
 
-        _LOREM_IPSUM = """Engage in a dynamic blend of memory exercises, problem-solving tasks, and attention training in this immersive and challenging game."""
-        def stream_data():
-            for word in _LOREM_IPSUM.split(" "):
-                    yield word + " "
-                    time.sleep(0.08)
-        if st.form_submit_button("Why play this game"):
-                st.write_stream(stream_data)
-        st.write('')
+        
+        st.write(" :orange[Why play this game - Engage in a dynamic blend of memory exercises, problem-solving tasks, and attention training in this immersive and challenging game.]")
                 
 
         if st.form_submit_button(f"🕹️ Start the  Game", use_container_width=True):
@@ -739,6 +545,26 @@ def app():
                 st.rerun()
 
         st.markdown(horizontal_bar, True)
+
+    patient_name = st.text_input("Enter the patient name:")
+
+        # Input fields for matched words and total words
+    matched_emoji = st.number_input("Enter the number of matched emoji:", min_value=0)
+    total_emoji = st.number_input("Enter the total number of emoji:", min_value=1)
+
+        # Button to calculate and update the speech score
+    if st.button("Upload  the Score"):
+        # Calculate the speech score
+        speech_score = (matched_emoji / total_emoji) * 10
+
+        # Search for the patient by name and update the score
+        try:
+            cell = sheet.find(patient_name)
+            row_index = cell.row
+            sheet.update_cell(row_index, 5, speech_score)
+            st.success(f"Speech score updated successfully for {patient_name} in Google Sheets!")
+        except gspread.exceptions.CellNotFound:
+            st.error("Patient not found. Please check the name and try again.")
 
 
     if 'runpage' not in mystate: mystate.runpage = Main
